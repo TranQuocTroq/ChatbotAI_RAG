@@ -14,22 +14,6 @@ RAG system for document Q&A. Ingests `PDF` / `DOCX` / `TXT` into isolated sessio
 
 ![Overview](asset/Overview.jpg)
 
-## Architecture
-
-```mermaid
-flowchart TD
-    A[User query] --> B[Intent Router]
-    B -->|chitchat| C[Direct LLM reply]
-    B -->|summary| D[Map-Reduce summarizer]
-    B -->|out of scope| E[Refuse, no citation]
-    B -->|retrieval| F[FAISS + BM25 hybrid search]
-    F --> G[Cross-Encoder rerank, sigmoid score]
-    G --> H{CRAG gate}
-    H -->|below threshold| E
-    H -->|above threshold| I[Local LLM synthesis]
-    I --> J[Answer + citations]
-```
-
 ## Features
 
 - Source citations: file name, page number, relevance score on every grounded answer
