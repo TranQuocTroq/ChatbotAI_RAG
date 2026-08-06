@@ -1,0 +1,55 @@
+# DocBrain System Configuration
+
+app:
+  name: "DocBrain - Intelligent Multi-Domain Document Q&A System"
+  version: "1.0.0"
+  description: "RAG System for Vietnamese Documents"
+  host: "0.0.0.0"
+  port: 8000
+
+paths:
+  config_dir: "config"
+
+# Durable storage backend (replaces ephemeral local-disk-only persistence).
+# Session metadata, FAISS/BM25 indices and uploaded documents are mirrored to this
+# Hugging Face Hub dataset repo. Set HF_DATASET_REPO_ID and HF_TOKEN in the environment
+# to enable it; without them the app falls back to local-disk-only storage.
+storage:
+  backend: "hf_dataset"
+
+chunking:
+  chunk_size: 600
+  overlap: 120
+  min_chunk_size: 50
+  separators:
+    - "\n\n"
+    - "\n"
+    - ". "
+    - "; "
+    - " "
+    - ""
+
+embedding:
+  model_name: "intfloat/multilingual-e5-small"
+  device: "cpu"  # 'cpu' or 'cuda'
+  normalize_embeddings: true
+  dimension: 384
+
+vector_store:
+  type: "faiss"
+  distance_strategy: "cosine"  # 'cosine' or 'l2'
+  top_k: 4
+
+llm:
+  # LLM inference always runs locally - no external inference API/token required.
+  mode: "local_llm"
+  extractive_model: "deepset/xlm-roberta-base-squad2"
+  local_llm_model: "Qwen/Qwen2.5-1.5B-Instruct"
+  temperature: 0.2
+  max_new_tokens: 256
+  max_context_tokens: 6500  # ~5000 words
+
+retrieval:
+  score_threshold: 0.35
+  hybrid_search: false
+  canonical_language: "vi"

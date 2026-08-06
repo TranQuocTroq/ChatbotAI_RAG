@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DocBrain AI - Intelligent Document QA RAG Assistant</title>
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    
+    <!-- Material Symbols -->
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+          darkMode: 'class',
+          theme: {
+            extend: {
+              colors: {
+                brand: {
+                  50: '#f0fdfa',
+                  100: '#ccfbf1',
+                  500: '#14b8a6',
+                  600: '#0d9488',
+                  700: '#0f766e',
+                }
+              }
+            }
+          }
+        }
+    </script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        code, pre { 
+            font-family: 'JetBrains Mono', monospace;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        .chat-max-width { max-width: 840px; }
+
+        .message-bubble {
+            word-break: break-word;
+            overflow-wrap: anywhere;
+            hyphens: auto;
+        }
+        
+        @media (max-width: 640px) {
+            .msg-user-bubble { max-width: 90% !important; }
+            .msg-bot-bubble { max-width: 95% !important; }
+        }
+    </style>
+
+    <script>
+        function toggleDarkMode() {
+          const html = document.documentElement;
+          if (html.classList.contains('dark')) {
+            html.classList.remove('dark');
+            localStorage.setItem('theme', 'light');
+          } else {
+            html.classList.add('dark');
+            localStorage.setItem('theme', 'dark');
+          }
+        }
+
+        if (localStorage.getItem('theme') === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+          document.documentElement.classList.add('dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+        }
+    </script>
+</head>
+<body class="bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 selection:bg-teal-500 selection:text-white">
+
+<!-- TopNavBar -->
+<header class="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shadow-xs sticky top-0 z-40">
+  <div class="flex justify-between items-center w-full px-6 py-3.5">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 bg-teal-600 rounded-xl flex items-center justify-center text-white shadow-xs">
+        <span class="material-symbols-outlined text-[20px]">description</span>
+      </div>
+      <div>
+        <h1 class="font-bold text-xl text-teal-800 dark:text-teal-300 leading-none">DocBrain AI</h1>
+        <p class="text-xs text-slate-500 font-medium">Intelligent Document Retrieval RAG System</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-3">
+      <button id="dark-toggle-btn" onclick="toggleDarkMode()" class="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors" title="Toggle light/dark mode">
+        <span class="material-symbols-outlined">dark_mode</span>
+      </button>
+      <div class="w-9 h-9 rounded-full bg-teal-100 dark:bg-teal-900/60 border border-teal-200 dark:border-teal-800 flex items-center justify-center font-bold text-teal-800 dark:text-teal-200 text-sm">
+        AI
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="flex h-[calc(100vh-65px)] w-full">
+  <!-- SideNavBar Left -->
+  <aside class="hidden lg:flex flex-col h-full p-4 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 w-[280px] shrink-0">
+    <button onclick="createNewSession()" class="w-full py-3 px-4 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-bold flex items-center justify-center gap-2 mb-4 shadow-sm hover:shadow transition-all active:scale-[0.98]">
+      <span class="material-symbols-outlined">add</span>
+      New Session
+    </button>
+
+    <div class="mb-2 px-1 flex justify-between items-center text-xs font-bold text-slate-400 uppercase tracking-wider">
+      <span>Recent sessions</span>
+      <span id="session-count-badge" class="text-slate-500">0</span>
+    </div>
+
+    <nav id="session-list-nav" class="flex-1 overflow-y-auto hide-scrollbar space-y-1.5 pr-0.5">
+      <!-- Session List rendered dynamically via JS -->
+    </nav>
+  </aside>
+
+  <!-- Main Chat Area -->
+  <main class="flex-1 flex flex-col relative overflow-hidden bg-slate-50/50 dark:bg-slate-950">
+    <!-- Chat Header -->
+    <div class="px-6 py-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-white/80 dark:bg-slate-900/80 backdrop-blur-md sticky top-0 z-10">
+      <div>
+        <h2 id="active-session-title" class="text-[17px] font-bold text-slate-800 dark:text-slate-100">Current Session</h2>
+      </div>
+
+      <!-- Clickable Doc Count Badge -->
+      <div id="active-doc-info" onclick="openDocManagerModal()" title="Click to manage documents in the session" class="flex items-center gap-2 px-3.5 py-1.5 bg-teal-50 hover:bg-teal-100 dark:bg-teal-950/80 dark:hover:bg-teal-900 border border-teal-200 dark:border-teal-800/80 rounded-full text-teal-800 dark:text-teal-200 text-xs font-semibold cursor-pointer transition-all shadow-xs group">
+        <span class="material-symbols-outlined text-[18px] text-teal-600 group-hover:scale-110 transition-transform">folder_open</span>
+        <span id="doc-info-text">0 documents · 0 chunks</span>
+        <span class="material-symbols-outlined text-[16px] text-teal-500 ml-0.5">tune</span>
+      </div>
+    </div>
+
+    <!-- Messages Canvas -->
+    <div class="flex-1 overflow-y-auto p-6 hide-scrollbar" id="messages-canvas">
+      <div class="chat-max-width mx-auto flex flex-col gap-6" id="messages-container">
+        <!-- Messages rendered dynamically -->
+      </div>
+    </div>
+
+    <!-- Input Area & Footer -->
+    <div class="px-6 pb-6 pt-2">
+      <div class="chat-max-width mx-auto flex flex-col gap-4">
+
+        <!-- Chat Bar -->
+        <div class="relative group">
+          <div class="relative flex items-center gap-3 bg-white dark:bg-slate-900 p-2 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-800 focus-within:border-teal-500/50 transition-all">
+            <input type="file" id="file-upload-input" accept=".pdf,.docx,.txt" style="display:none" onchange="handleFileUpload(event)"/>
+            <button onclick="document.getElementById('file-upload-input').click()" class="p-2.5 text-slate-500 hover:text-teal-600 dark:hover:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-950 rounded-xl transition-all" title="Tải documents (PDF, DOCX, TXT)">
+              <span class="material-symbols-outlined">attach_file</span>
+            </button>
+            <input type="text" id="user-input" placeholder="Hỏi bất kỳ điều gì về documents của bạn..." class="flex-1 bg-transparent border-none outline-none text-slate-800 dark:text-slate-100 placeholder-slate-400 text-sm font-medium" onkeydown="handleKeyDown(event)"/>
+            <button onclick="sendMessage()" id="send-btn" class="p-2.5 bg-teal-600 hover:bg-teal-700 active:scale-95 text-white rounded-xl transition-all shadow-xs flex items-center justify-center">
+              <span class="material-symbols-outlined text-[20px]">send</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- Document Management Modal -->
+<div id="doc-manager-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
+  <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-200 dark:border-slate-800 transform transition-all">
+    <div class="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-850">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl bg-teal-100 dark:bg-teal-900/60 text-teal-700 dark:text-teal-300 flex items-center justify-center">
+          <span class="material-symbols-outlined text-[20px]">folder_open</span>
+        </div>
+        <div>
+          <h3 class="font-bold text-base text-slate-800 dark:text-slate-100">Session Document Management</h3>
+          <p class="text-xs text-slate-500" id="modal-session-subtitle">Danh sách documents đã tải lên</p>
+        </div>
+      </div>
+      <button onclick="closeDocManagerModal()" class="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-200/60 dark:hover:bg-slate-800 transition-colors">
+        <span class="material-symbols-outlined text-[20px]">close</span>
+      </button>
+    </div>
+
+    <div class="p-5 space-y-4">
+      <div class="flex items-center justify-between">
+        <span class="text-xs font-bold text-slate-500 uppercase tracking-wider">Available documents (<span id="modal-doc-count">0</span>)</span>
+        <button onclick="document.getElementById('file-upload-input').click()" class="px-3 py-1.5 bg-teal-600 hover:bg-teal-700 active:scale-95 text-white rounded-xl text-xs font-bold flex items-center gap-1 shadow-xs transition-all">
+          <span class="material-symbols-outlined text-[16px]">add</span>
+          Thêm documents
+        </button>
+      </div>
+
+      <div id="modal-doc-list" class="space-y-2 max-h-64 overflow-y-auto hide-scrollbar pr-1">
+        <!-- Rendered dynamically via JS -->
+      </div>
+    </div>
+
+    <div class="p-4 bg-slate-50 dark:bg-slate-850 border-t border-slate-200 dark:border-slate-800 flex justify-end">
+      <button onclick="closeDocManagerModal()" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition-all">
+        Close
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+    let activeSessionId = null;
+    let sessionsData = {};
+
+    document.addEventListener("DOMContentLoaded", () => {
+        loadSessions();
+    });
+
+    async function loadSessions() {
+        try {
+            const res = await fetch('/api/sessions');
+            if (res.ok) {
+                sessionsData = await res.json();
+                renderSessionListNav();
+                
+                const sessionIds = Object.keys(sessionsData);
+                if (sessionIds.length > 0) {
+                    if (!activeSessionId || !sessionsData[activeSessionId]) {
+                        switchSession(sessionIds[0]);
+                    } else {
+                        switchSession(activeSessionId);
+                    }
+                } else {
+                    createNewSession();
+                }
+            }
+        } catch(e) {
+            console.error("Error loading sessions:", e);
+        }
+    }
+
+    function renderSessionListNav() {
+        const nav = document.getElementById('session-list-nav');
+        nav.innerHTML = '';
+        
+        const sessionIds = Object.keys(sessionsData);
+        document.getElementById('session-count-badge').innerText = sessionIds.length;
+
+        sessionIds.forEach(sid => {
+            const session = sessionsData[sid];
+            const isActive = sid === activeSessionId;
+            
+            const btn = document.createElement('div');
+            btn.className = `group flex items-center justify-between p-3 rounded-xl cursor-pointer transition-all ${
+                isActive 
+                ? 'bg-teal-50 dark:bg-teal-950/80 border border-teal-200 dark:border-teal-800/80 text-teal-900 dark:text-teal-100 font-bold shadow-xs' 
+                : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 font-medium'
+            }`;
+            
+            btn.onclick = () => switchSession(sid);
+
+            btn.innerHTML = `
+                <div class="flex items-center gap-2.5 overflow-hidden pr-2">
+                    <span class="material-symbols-outlined text-[18px] ${isActive ? 'text-teal-600' : 'text-slate-400'}">chat_bubble</span>
+                    <div class="truncate text-sm">
+                        <div class="truncate">${escapeHtml(session.name || sid)}</div>
+                        <div class="text-[11px] font-normal text-slate-400">${session.doc_count || 0} documents · ${session.chunks || 0} chunks</div>
+                    </div>
+                </div>
+                <button onclick="event.stopPropagation(); deleteSession('${sid}')" class="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/60 rounded-lg transition-all" title="Delete session">
+                    <span class="material-symbols-outlined text-[16px]">delete</span>
+                </button>
+            `;
+            nav.appendChild(btn);
+        });
+    }
+
+    function switchSession(sessionId) {
+        if (!sessionsData[sessionId]) return;
+        activeSessionId = sessionId;
+        const session = sessionsData[sessionId];
+
+        document.getElementById('active-session-title').innerText = session.name || sessionId;
+        updateHeaderDocInfo(session);
+        renderSessionListNav();
+        renderMessages(session.messages || []);
+    }
+
+    function updateHeaderDocInfo(session) {
+        const docCount = session.doc_count || (session.documents ? session.documents.length : 0);
+        const chunkCount = session.chunks || 0;
+        document.getElementById('doc-info-text').innerText = `${docCount} documents · ${chunkCount} chunks`;
+    }
+
+    async function createNewSession() {
+        try {
+            const res = await fetch('/api/sessions/new', { method: 'POST' });
+            if (res.ok) {
+                const newSession = await res.json();
+                sessionsData[newSession.id] = newSession;
+                switchSession(newSession.id);
+            }
+        } catch(e) {
+            console.error("Error creating new session:", e);
+        }
+    }
+
+    async function deleteSession(sessionId) {
+        if (!confirm("Are you sure you want to delete this session?")) return;
+        try {
+            const res = await fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' });
+            if (res.ok) {
+                delete sessionsData[sessionId];
+                activeSessionId = null;
+                loadSessions();
+            }
+        } catch(e) {
+            console.error("Error deleting session:", e);
+        }
+    }
+
+    function renderMessages(messages) {
+        const canvas = document.getElementById('messages-canvas');
+        const container = document.getElementById('messages-container');
+        container.innerHTML = '';
+
+        if (!messages || messages.length === 0) {
+            container.innerHTML = `
+                <div class="flex flex-col items-center justify-center text-center py-16 px-4">
+                    <div class="w-16 h-16 rounded-2xl bg-teal-50 dark:bg-teal-950/80 text-teal-600 flex items-center justify-center mb-4 border border-teal-200/80 dark:border-teal-800/80">
+                        <span class="material-symbols-outlined text-[32px]">dataset</span>
+                    </div>
+                    <h3 class="text-lg font-bold text-slate-800 dark:text-slate-100 mb-1">New Session</h3>
+                    <p class="text-sm text-slate-500 max-w-sm">Tải lên file documents (PDF, DOCX, TXT) hoặc đặt câu hỏi để bắt đầu tra cứu thông tin với DocBrain AI.</p>
+                </div>
+            `;
+            return;
+        }
+
+        messages.forEach(msg => {
+            appendMessageUI(msg.role, msg.content);
+        });
+
+        canvas.scrollTop = canvas.scrollHeight;
+    }
+
+    function appendMessageUI(role, content) {
+        const container = document.getElementById('messages-container');
+        const isUser = role === 'user';
+
+        const msgDiv = document.createElement('div');
+        msgDiv.className = `flex gap-4 ${isUser ? 'justify-end' : 'justify-start'}`;
+
+        if (isUser) {
+            msgDiv.innerHTML = `
+                <div class="msg-user-bubble max-w-[80%] bg-teal-600 text-white p-4 rounded-2xl shadow-xs text-sm leading-relaxed message-bubble">
+                    ${escapeHtml(content)}
+                </div>
+            `;
+        } else {
+            msgDiv.innerHTML = `
+                <div class="msg-bot-bubble max-w-[88%] bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-4 rounded-2xl shadow-xs text-sm text-slate-800 dark:text-slate-200 leading-relaxed message-bubble">
+                    ${formatMarkdown(content)}
+                </div>
+            `;
+        }
+
+        container.appendChild(msgDiv);
+        const canvas = document.getElementById('messages-canvas');
+        canvas.scrollTop = canvas.scrollHeight;
+    }
+
+    async function sendMessage() {
+        const input = document.getElementById('user-input');
+        const query = input.value.trim();
+        if (!query || !activeSessionId) return;
+
+        input.value = '';
+        appendMessageUI('user', query);
+
+        // Append bot typing indicator
+        const container = document.getElementById('messages-container');
+        const typingDiv = document.createElement('div');
+        typingDiv.id = 'typing-indicator';
+        typingDiv.className = 'flex gap-4 justify-start';
+        typingDiv.innerHTML = `
+            <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4 rounded-2xl shadow-xs text-sm text-slate-500 flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-teal-500 animate-ping"></span>
+                Searching & synthesizing answer...
+            </div>
+        `;
+        container.appendChild(typingDiv);
+        const canvas = document.getElementById('messages-canvas');
+        canvas.scrollTop = canvas.scrollHeight;
+
+        try {
+            const res = await fetch(`/api/sessions/${activeSessionId}/ask`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ query: query })
+            });
+
+            document.getElementById('typing-indicator')?.remove();
+
+            if (res.ok) {
+                const data = await res.json();
+                appendMessageUI('assistant', data.answer_full);
+                if (sessionsData[activeSessionId]) {
+                    sessionsData[activeSessionId].messages = sessionsData[activeSessionId].messages || [];
+                    sessionsData[activeSessionId].messages.push({ role: 'user', content: query });
+                    sessionsData[activeSessionId].messages.push({ role: 'assistant', content: data.answer_full });
+                }
+            } else {
+                appendMessageUI('assistant', '⚠️ An error occurred while processing your question.');
+            }
+        } catch(e) {
+            console.error("Lỗi gửi câu hỏi:", e);
+            document.getElementById('typing-indicator')?.remove();
+            appendMessageUI('assistant', '⚠️ Server connection error.');
+        }
+    }
+
+    async function handleFileUpload(event) {
+        const file = event.target.files[0];
+        if (!file || !activeSessionId) return;
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        // Show uploading notification
+        const container = document.getElementById('messages-container');
+        const uploadMsg = document.createElement('div');
+        uploadMsg.id = 'uploading-indicator';
+        uploadMsg.className = 'flex gap-4 justify-start';
+        uploadMsg.innerHTML = `
+            <div class="bg-teal-50 dark:bg-teal-950/80 border border-teal-200 dark:border-teal-800/80 p-4 rounded-2xl shadow-xs text-sm text-teal-800 dark:text-teal-200 flex items-center gap-2">
+                <span class="material-symbols-outlined animate-spin">sync</span>
+                Processing file <strong>${escapeHtml(file.filename || file.name)}</strong> (Extract -> Chunk -> Embed -> Hybrid Search)...
+            </div>
+        `;
+        container.appendChild(uploadMsg);
+
+        try {
+            const res = await fetch(`/api/sessions/${activeSessionId}/upload`, {
+                method: 'POST',
+                body: formData
+            });
+
+            document.getElementById('uploading-indicator')?.remove();
+
+            if (res.ok) {
+                const data = await res.json();
+                if (sessionsData[activeSessionId]) {
+                    sessionsData[activeSessionId].documents = data.documents || sessionsData[activeSessionId].documents || [];
+                    sessionsData[activeSessionId].doc_count = sessionsData[activeSessionId].documents.length;
+                    sessionsData[activeSessionId].chunks = data.total_chunks;
+                    
+                    updateHeaderDocInfo(sessionsData[activeSessionId]);
+                    renderSessionListNav();
+                }
+
+                appendMessageUI('assistant', `✅ Successfully processed and saved file **${escapeHtml(file.name)}** ! Created **${data.new_chunks} chunks** in Hybrid Search store.`);
+            } else {
+                appendMessageUI('assistant', `❌ Error uploading file ${escapeHtml(file.name)}.`);
+            }
+        } catch(e) {
+            console.error("Lỗi upload file:", e);
+            document.getElementById('uploading-indicator')?.remove();
+            appendMessageUI('assistant', `❌ Connection error during upload.`);
+        }
+        event.target.value = '';
+    }
+
+    function handleKeyDown(event) {
+        if (event.key === 'Enter') {
+            sendMessage();
+        }
+    }
+
+    /* Modal Management Functions */
+    function openDocManagerModal() {
+        if (!activeSessionId || !sessionsData[activeSessionId]) return;
+        const session = sessionsData[activeSessionId];
+        document.getElementById('modal-session-subtitle').innerText = session.name || activeSessionId;
+        const docs = session.documents || [];
+        document.getElementById('modal-doc-count').innerText = docs.length;
+        
+        renderModalDocList(session);
+        document.getElementById('doc-manager-modal').classList.remove('hidden');
+    }
+
+    function closeDocManagerModal() {
+        document.getElementById('doc-manager-modal').classList.add('hidden');
+    }
+
+    function renderModalDocList(session) {
+        const listEl = document.getElementById('modal-doc-list');
+        listEl.innerHTML = '';
+        
+        const docs = session.documents || [];
+        if (docs.length === 0) {
+            listEl.innerHTML = `
+                <div class="text-center py-6 text-slate-400 text-sm italic border border-dashed border-slate-200 dark:border-slate-800 rounded-xl">
+                    Phiên làm việc này chưa có documents nào.
+                </div>
+            `;
+            return;
+        }
+        
+        docs.forEach(docName => {
+            const item = document.createElement('div');
+            item.className = 'flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-750 hover:border-teal-500/40 transition-all';
+            item.innerHTML = `
+                <div class="flex items-center gap-3 overflow-hidden pr-2">
+                    <span class="material-symbols-outlined text-teal-600">description</span>
+                    <span class="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate" title="${escapeHtml(docName)}">${escapeHtml(docName)}</span>
+                </div>
+                <button onclick="deleteDocFromModal('${escapeHtml(docName)}')" class="px-2.5 py-1 text-rose-600 hover:text-white hover:bg-rose-600 dark:text-rose-400 dark:hover:text-white dark:hover:bg-rose-700 border border-rose-200 dark:border-rose-800/80 rounded-lg transition-all flex items-center gap-1 text-xs font-bold shrink-0" title="Delete documents này">
+                    <span class="material-symbols-outlined text-[16px]">delete</span>
+                    Delete
+                </button>
+            `;
+            listEl.appendChild(item);
+        });
+    }
+
+    async function deleteDocFromModal(filename) {
+        if (!confirm(`Are you sure you want to delete file "${filename}" from this session?`)) return;
+        try {
+            const res = await fetch(`/api/sessions/${activeSessionId}/documents/${encodeURIComponent(filename)}`, {
+                method: 'DELETE'
+            });
+            if (res.ok) {
+                const data = await res.json();
+                sessionsData[activeSessionId].documents = data.documents;
+                sessionsData[activeSessionId].doc_count = data.doc_count;
+                sessionsData[activeSessionId].chunks = data.chunks;
+                
+                updateHeaderDocInfo(sessionsData[activeSessionId]);
+                renderModalDocList(sessionsData[activeSessionId]);
+                document.getElementById('modal-doc-count').innerText = data.doc_count;
+                renderSessionListNav();
+                
+                appendMessageUI('assistant', `🗑️ Đã xóa documents **${escapeHtml(filename)}** from session. System has updated the data index.`);
+            } else {
+                alert('Lỗi khi xóa documents.');
+            }
+        } catch(e) {
+            console.error("Delete doc error:", e);
+            alert('Lỗi kết nối khi xóa documents.');
+        }
+    }
+
+    function formatMarkdown(text) {
+        if (!text) return '';
+
+        // 1. Phân tách Phần Trả Lời Chính và Khối Trích Dẫn Chứng Minh
+        let mainAns = text;
+        let citationsPart = '';
+
+        if (text.includes('---')) {
+            const parts = text.split(/---\s*/);
+            mainAns = parts[0];
+            citationsPart = parts.slice(1).join('\n');
+        }
+
+        // 2. Format Phần Trả Lời Chính (Tách paragraph, bullet point, bold chữ sạch sẽ)
+        let rawMain = mainAns.trim();
+        let mainLines = rawMain.split('\n');
+        let formattedMainLines = [];
+
+        mainLines.forEach(line => {
+            let trimmed = line.trim();
+            if (!trimmed) {
+                formattedMainLines.push('<div class="h-2"></div>');
+                return;
+            }
+
+            // Bold text: Phông đậm rõ ràng, XÓA HOÀN TOÀN ô highlight nền xanh rườm rà
+            let lineHtml = escapeHtml(trimmed)
+                .replace(/\*\*(.*?)\*\*/g, '<strong class="font-bold text-slate-900 dark:text-slate-100">$1</strong>')
+                .replace(/`([^`]+)`/g, '<code class="bg-slate-200/70 dark:bg-slate-800 px-1.5 py-0.5 rounded font-mono text-xs text-teal-800 dark:text-teal-300 font-semibold">$1</code>');
+
+            // Bullet points
+            if (trimmed.startsWith('• ') || trimmed.startsWith('- ')) {
+                formattedMainLines.push(`
+                    <div class="flex items-start gap-2.5 my-1 pl-2">
+                        <span class="text-teal-600 dark:text-teal-400 font-bold shrink-0 mt-0.5">•</span>
+                        <span class="text-slate-800 dark:text-slate-200">${lineHtml.substring(lineHtml.indexOf('•') + 1 || lineHtml.indexOf('-') + 1).trim()}</span>
+                    </div>
+                `);
+            } else if (/^\d+️⃣/.test(trimmed)) {
+                formattedMainLines.push(`
+                    <div class="font-bold text-slate-900 dark:text-slate-100 mt-3.5 mb-1.5 text-sm flex items-center gap-1.5">${lineHtml}</div>
+                `);
+            } else {
+                formattedMainLines.push(`<div class="my-1 text-slate-800 dark:text-slate-200 leading-relaxed">${lineHtml}</div>`);
+            }
+        });
+
+        let htmlMain = formattedMainLines.join('');
+
+        // 3. Format Khối Trích Dẫn Chứng Minh (Mờ xám, font-mono, ô bọc vừa vặn không tràn)
+        let htmlCitations = '';
+        if (citationsPart.trim()) {
+            // Delete các tiêu đề trùng lặp
+            let cleanCitations = citationsPart
+                .replace(/📋\s*\*\*Evidence excerpt:\*\*/g, '')
+                .replace(/📋\s*Nội dung đoạn văn bản trích dẫn làm bằng chứng/g, '')
+                .trim();
+
+            let blocks = cleanCitations.split(/(\*\*\[\d+\]\s*Excerpt from.*?\*\*)/g);
+            let renderedBlocks = [];
+
+            for (let i = 0; i < blocks.length; i++) {
+                let block = blocks[i].trim();
+                if (!block) continue;
+
+                if (block.startsWith('**[')) {
+                    let title = escapeHtml(block)
+                        .replace(/\*\*(.*?)\*\*/g, '<span class="font-bold text-slate-700 dark:text-slate-300">$1</span>')
+                        .replace(/`([^`]+)`/g, '<code class="bg-slate-200/80 dark:bg-slate-800 px-1 py-0.5 rounded font-mono text-xs text-teal-800 dark:text-teal-300 font-medium">$1</code>');
+                    renderedBlocks.push(`<div class="font-semibold text-xs text-slate-600 dark:text-slate-400 mt-3 mb-1 flex items-center gap-1">${title}</div>`);
+                } else {
+                    let lines = block.split('\n');
+                    let quoteLines = [];
+                    let otherLines = [];
+
+                    lines.forEach(l => {
+                        let l_str = l.trim();
+                        if (l_str.startsWith('&gt;') || l_str.startsWith('>')) {
+                            quoteLines.push(l_str.replace(/^(&gt;|>)\s?/, ''));
+                        } else if (l_str.includes('Trích dẫn bằng chứng:') || l_str.includes('Độ tin cậy:')) {
+                            otherLines.push(l_str);
+                        } else if (l_str) {
+                            quoteLines.push(l_str);
+                        }
+                    });
+
+                    if (quoteLines.length > 0) {
+                        let quoteText = escapeHtml(quoteLines.join(' '));
+                        renderedBlocks.push(`
+                            <div class="p-3 my-1.5 bg-slate-100/90 dark:bg-slate-850/90 border-l-3 border-teal-500 rounded-r-md text-[11px] leading-relaxed text-slate-600 dark:text-slate-400 italic font-mono break-words shadow-sm">
+                                "${quoteText}"
+                            </div>
+                        `);
+                    }
+
+                    if (otherLines.length > 0) {
+                        let otherText = escapeHtml(otherLines.join('\n'))
+                            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                            .replace(/`([^`]+)`/g, '<code class="bg-slate-200 dark:bg-slate-800 px-1 py-0.5 rounded font-mono text-[11px]">$1</code>')
+                            .replace(/\n/g, '<br>');
+                        renderedBlocks.push(`<div class="mt-2 text-xs text-slate-400 dark:text-slate-500">${otherText}</div>`);
+                    }
+                }
+            }
+
+            htmlCitations = `
+                <div class="citations-muted-block border-t border-slate-200/80 dark:border-slate-800/80 pt-3 mt-4 text-xs text-slate-500 dark:text-slate-400">
+                    <div class="font-bold text-slate-600 dark:text-slate-400 flex items-center gap-1.5 mb-2">
+                        <span class="material-symbols-outlined text-[16px] text-teal-600">format_quote</span>
+                        📋 Evidence excerpt (for verification):
+                    </div>
+                    ${renderedBlocks.join('')}
+                </div>
+            `;
+        }
+
+        return `
+            <div class="main-answer-block text-slate-800 dark:text-slate-100 text-sm leading-relaxed space-y-1">
+                ${htmlMain}
+            </div>
+            ${htmlCitations}
+        `;
+    }
+
+    function escapeHtml(text) {
+        if (!text) return '';
+        return text
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+</script>
+</body>
+</html>

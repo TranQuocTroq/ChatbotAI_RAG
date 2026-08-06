@@ -1,0 +1,19 @@
+--extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+accelerate>=0.26.0
+gguf>=0.10.0
+huggingface-hub>=0.24.0
+torch>=2.0.0
+transformers>=4.40.0
+sentence-transformers>=2.5.0
+faiss-cpu>=1.7.4
+numpy>=1.24.0
+PyMuPDF>=1.23.0
+pdfplumber>=0.10.0
+rank_bm25>=0.2.2
+fastapi>=0.100.0,<0.113.0
+uvicorn>=0.22.0
+python-multipart>=0.0.9
+pyyaml>=6.0
+python-dotenv>=1.0.0
+pyvi>=0.1.1
+llama-cpp-python>=0.2.70
