@@ -8,79 +8,90 @@ pinned: false
 license: mit
 ---
 
-# DocBrain: Intelligent Multi-Domain Document Q&A System
+# DocBrain
+
+RAG system for document Q&A. Ingests `PDF` / `DOCX` / `TXT` into isolated sessions, answers strictly from the uploaded content, runs fully offline on CPU (no external inference API).
 
 ![Overview](asset/Overview.jpg)
 
-**DocBrain** is an Intelligent Question & Answer System (RAG - Retrieval-Augmented Generation) that supports accurate retrieval and responses from document files (`PDF`, `DOCX`, `TXT`) in isolated sessions.
+## Architecture
 
----
-
-## Key Features
-
-- **Source Citations**: Accurately displays the original file name, page number, vector relevance score, and quoted text snippets.
-- **Local LLM Engine**: Runs entirely offline on CPU (Qwen2.5-1.5B-Instruct GGUF) - no API keys required, no external inference services dependencies.
-- **Hybrid Retrieval**: Combines `FAISS` (dense, `intfloat/multilingual-e5-small`) and `BM25` (sparse) using Reciprocal Rank Fusion and Cross-Encoder re-ranking.
-- **Durable Storage via Hugging Face Dataset**: Sessions, FAISS/BM25 indices, and uploaded documents are synchronized to a Hugging Face Hub Dataset repo, preventing data loss upon Space restarts (local disk on HF Spaces is ephemeral).
-- **Parallel Web UI & REST API**: Features a web interface (`src/frontend/templates/index.html`) alongside a FastAPI REST API (`/api/sessions/*`).
-
----
-
-## Project Structure
-
-```text
-docbrain-rag/
-├── config/
-│   └── config.yaml           # Configuration for RAG, Embedder, Model, Chunking, Storage
-├── data/                      # Local cache (ephemeral on HF Spaces) - real source is HF Dataset
-├── src/
-│   ├── core/                  # DocumentProcessor, Chunker, Embedder, VectorStore, BM25Store,
-│   │                          #   Retriever, LLMReader, RAGPipeline, HFDatasetStorage
-│   ├── main.py                 # FastAPI app: defines all /api/sessions/* endpoints
-│   └── frontend/               # Web UI Frontend (Vanilla HTML/CSS/JS)
-├── scripts/
-│   ├── ingest.py               # Script for static data ingestion (data/raw) to FAISS index
-│   ├── test_qa.py              # CLI testing script for QA
-│   └── benchmark_rag.py        # Benchmarking utility
-├── tests/                       # Unit / integration tests
-├── app.py                       # FastAPI server entrypoint (used for HF Spaces Docker)
-├── requirements.txt
-└── Dockerfile
+```mermaid
+flowchart TD
+    A[User query] --> B[Intent Router]
+    B -->|chitchat| C[Direct LLM reply]
+    B -->|summary| D[Map-Reduce summarizer]
+    B -->|out of scope| E[Refuse, no citation]
+    B -->|retrieval| F[FAISS + BM25 hybrid search]
+    F --> G[Cross-Encoder rerank, sigmoid score]
+    G --> H{CRAG gate}
+    H -->|below threshold| E
+    H -->|above threshold| I[Local LLM synthesis]
+    I --> J[Answer + citations]
 ```
 
----
+## Features
 
-## Installation & Local Execution
+- Source citations: file name, page number, relevance score on every grounded answer
+- Local inference via `llama.cpp` + quantized Qwen2.5 GGUF - no API key, no per-token cost
+- Hybrid retrieval: FAISS dense (`multilingual-e5-small`) + BM25 sparse, RRF fusion, cross-encoder rerank
+- Table-aware PDF parsing: `pdfplumber` fallback so table rows/columns don't get scrambled
+- Durable storage: sessions and indices mirrored to a Hugging Face Hub dataset (Spaces disk is ephemeral)
+- Session isolation: no cross-session citation leakage
 
-### 1. Install Dependencies
+## Production Optimizations
+
+| Problem | Fix |
+|---|---|
+| Min-max score always looked "confident" even on irrelevant matches | Sigmoid over raw cross-encoder logit gives an absolute relevance score |
+| Table rows/columns scrambled on extraction | `pdfplumber.extract_tables()` fallback for tabular pages |
+| Oversized chunks diluted embeddings | True recursive chunking with a hard size cap |
+| One slow request blocked all others | CPU-bound work (embed/rerank/generate) moved to a thread pool |
+| `llama.cpp` auto thread detection was unreliable in-container | `n_threads` / `n_batch` set explicitly |
+| Query-translation LLM call doubled latency | Removed - the embedding model is already cross-lingual |
+| Data lost on every Space restart | Synced to a Hugging Face Hub dataset repo |
+| Unbounded uploads | Size limit + file-type allowlist |
+| Anyone could delete any session | Optional `APP_API_KEY` header check on write/delete routes |
+
+## Limitations
+
+- Free CPU tier = slow generation; use a paid CPU/GPU tier for latency-sensitive use
+- No per-user accounts, only a shared API key
+- Reranker is not Vietnamese-tuned by default - validate before production use on Vietnamese content
+- Single-process; scaling out needs stateless replicas behind a load balancer
+
+## Setup
+
 ```bash
 pip install -r requirements.txt
-```
-
-### 2. Configure Environment Variables
-```bash
-cp .env.example .env
-# Fill in HF_TOKEN (write scope) and HF_DATASET_REPO_ID to enable durable storage.
-# Optional: if left blank, the app will still run but data is stored locally (lost on restart).
-```
-
-### 3. Start Server (Local Host: 7860)
-```bash
+cp .env.example .env   # fill HF_TOKEN + HF_DATASET_REPO_ID for durable storage (optional)
 python app.py
 ```
-*Web Interface: `http://localhost:7860` — Swagger API docs: `http://localhost:7860/docs`*
 
----
+UI: `http://localhost:7860` · Docs: `http://localhost:7860/docs`
 
-## Deployment to Hugging Face Spaces
+## Environment Variables
 
-1. Create a new **Space** on Hugging Face (`https://huggingface.co/new-space`), selecting the **Docker** SDK.
-2. Push the entire source code to the Space repository (do not push the `.env` file - it is already in `.gitignore`).
-3. In **Settings -> Repository Secrets**, declare:
-   - `HF_TOKEN`: access token (write scope) - used for reading/writing data to the HF Dataset repo, **not used for LLM inference** (LLM runs completely locally).
-   - `HF_DATASET_REPO_ID`: the dataset repo ID used for storage, e.g., `your-username/docbrain-storage`.
+| Variable | Purpose |
+|---|---|
+| `HF_TOKEN` | Write-scope HF Hub token, storage only (not used for LLM) |
+| `HF_DATASET_REPO_ID` | Target dataset repo, e.g. `user/docbrain-storage` |
+| `APP_API_KEY` | Header secret for write/delete endpoints |
+| `MAX_UPLOAD_SIZE_MB` | Upload size limit |
+| `LOG_LEVEL` | `DEBUG` / `INFO` / `WARNING` / `ERROR` |
 
-## License & Author
+## Deploy to Hugging Face Spaces
 
-- Developed for educational and production RAG purposes.
-- License: MIT
+1. New Space -> SDK: Docker
+2. Push repo (`.env` is gitignored)
+3. Settings -> Repository Secrets: `HF_TOKEN`, `HF_DATASET_REPO_ID`, `APP_API_KEY`
+
+## Testing
+
+```bash
+pytest tests/
+```
+
+## License
+
+MIT
